@@ -343,6 +343,160 @@ class PurchaseOrderService
         );
     }
 
+    public function bulkApprove(
+        User $user,
+        array $purchaseOrderIds
+    ): Collection {
+        if ($user->role !== 'admin') {
+            throw ValidationException::withMessages([
+                'user' =>
+                    'Only administrators can approve purchase orders.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $purchaseOrderIds) {
+            $purchaseOrders = PurchaseOrder::query()
+                ->with([
+                    'branch',
+                    'warehouse',
+                    'creator',
+                    'approver',
+                    'items.product',
+                ])
+                ->whereIn('id', $purchaseOrderIds)
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($purchaseOrders as $purchaseOrder) {
+                if ($purchaseOrder->status !== 'pending') {
+                    throw ValidationException::withMessages([
+                        'status' =>
+                            "Purchase order {$purchaseOrder->reference_number} is no longer pending.",
+                    ]);
+                }
+            }
+
+            foreach ($purchaseOrders as $purchaseOrder) {
+                $purchaseOrder->update([
+                    'status' => 'approved',
+                    'approved_by' => $user->id,
+                    'approved_at' => now(),
+                    'rejection_reason' => null,
+                ]);
+
+                $this->activityLogService->log(
+                    user: $user,
+                    action: 'approved',
+                    module: 'purchase_order',
+                    description:
+                    'Approved purchase order ' .
+                    $purchaseOrder->reference_number . '.',
+                    branch: $purchaseOrder->branch,
+                    warehouse: $purchaseOrder->warehouse,
+                    subject: $purchaseOrder,
+                    oldValues: [
+                        'status' => 'pending',
+                    ],
+                    newValues: [
+                        'status' => 'approved',
+                    ],
+                );
+            }
+
+            return $purchaseOrders->map(
+                function (PurchaseOrder $purchaseOrder) {
+                    return $this->appendDeliveryPhotoUrl(
+                        $purchaseOrder->fresh([
+                            'branch',
+                            'warehouse',
+                            'creator',
+                            'approver',
+                            'items.product',
+                        ])
+                    );
+                }
+            );
+        });
+    }
+
+    public function bulkReject(
+        User $user,
+        array $purchaseOrderIds,
+        string $rejectionReason
+    ): Collection {
+        if ($user->role !== 'admin') {
+            throw ValidationException::withMessages([
+                'user' =>
+                    'Only administrators can reject purchase orders.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $purchaseOrderIds, $rejectionReason) {
+            $purchaseOrders = PurchaseOrder::query()
+                ->with([
+                    'branch',
+                    'warehouse',
+                    'creator',
+                    'approver',
+                    'items.product',
+                ])
+                ->whereIn('id', $purchaseOrderIds)
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($purchaseOrders as $purchaseOrder) {
+                if ($purchaseOrder->status !== 'pending') {
+                    throw ValidationException::withMessages([
+                        'status' =>
+                            "Purchase order {$purchaseOrder->reference_number} is no longer pending.",
+                    ]);
+                }
+            }
+
+            foreach ($purchaseOrders as $purchaseOrder) {
+                $purchaseOrder->update([
+                    'status' => 'rejected',
+                    'approved_by' => null,
+                    'approved_at' => null,
+                    'rejection_reason' => $rejectionReason,
+                ]);
+
+                $this->activityLogService->log(
+                    user: $user,
+                    action: 'rejected',
+                    module: 'purchase_order',
+                    description:
+                    'Rejected purchase order ' .
+                    $purchaseOrder->reference_number . '.',
+                    branch: $purchaseOrder->branch,
+                    warehouse: $purchaseOrder->warehouse,
+                    subject: $purchaseOrder,
+                    oldValues: [
+                        'status' => 'pending',
+                    ],
+                    newValues: [
+                        'status' => 'rejected',
+                        'rejection_reason' => $rejectionReason,
+                    ],
+                );
+            }
+
+            return $purchaseOrders->map(
+                function (PurchaseOrder $purchaseOrder) {
+                    return $this->appendDeliveryPhotoUrl(
+                        $purchaseOrder->fresh([
+                            'branch',
+                            'warehouse',
+                            'creator',
+                            'approver',
+                            'items.product',
+                        ])
+                    );
+                }
+            );
+        });
+    }
+
     public function process(
         User $user,
         PurchaseOrder $purchaseOrder

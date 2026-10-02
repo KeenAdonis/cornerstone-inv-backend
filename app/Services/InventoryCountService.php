@@ -90,6 +90,13 @@ class InventoryCountService
                     $systemQuantity =
                         (float) $inventory->quantity;
 
+                    if ($countedQuantity > $systemQuantity) {
+                        throw ValidationException::withMessages([
+                            'items' =>
+                                "Physical count for {$inventory->product->name} cannot be greater than the system quantity of {$systemQuantity}.",
+                        ]);
+                    }
+
                     $variance =
                         $countedQuantity -
                         $systemQuantity;

@@ -8,6 +8,8 @@ use App\Http\Requests\PurchaseOrder\DeliverPurchaseOrderRequest;
 use App\Http\Requests\PurchaseOrder\ReleasePurchaseOrderRequest;
 use App\Http\Requests\PurchaseOrder\ReviewPurchaseOrderRequest;
 use App\Http\Requests\PurchaseOrder\StorePurchaseOrderRequest;
+use App\Http\Requests\PurchaseOrder\BulkApprovePurchaseOrdersRequest;
+use App\Http\Requests\PurchaseOrder\BulkRejectPurchaseOrdersRequest;
 
 use App\Models\PurchaseOrder;
 
@@ -83,6 +85,47 @@ class PurchaseOrderController extends Controller
             'data' => [
                 'purchase_order' =>
                     $updatedPurchaseOrder,
+            ],
+        ]);
+    }
+
+    public function bulkApprove(
+        BulkApprovePurchaseOrdersRequest $request
+    ): JsonResponse {
+        $purchaseOrders =
+            $this->purchaseOrderService->bulkApprove(
+                $request->user(),
+                $request->validated('purchase_order_ids')
+            );
+
+        return response()->json([
+            'success' => true,
+            'message' =>
+                'Purchase orders approved successfully.',
+            'data' => [
+                'purchase_orders' =>
+                    $purchaseOrders,
+            ],
+        ]);
+    }
+
+    public function bulkReject(
+        BulkRejectPurchaseOrdersRequest $request
+    ): JsonResponse {
+        $purchaseOrders =
+            $this->purchaseOrderService->bulkReject(
+                $request->user(),
+                $request->validated('purchase_order_ids'),
+                $request->validated('rejection_reason')
+            );
+
+        return response()->json([
+            'success' => true,
+            'message' =>
+                'Purchase orders rejected successfully.',
+            'data' => [
+                'purchase_orders' =>
+                    $purchaseOrders,
             ],
         ]);
     }

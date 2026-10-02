@@ -303,6 +303,16 @@ Route::middleware('auth:sanctum')->group(function () {
             '/purchase-orders/{purchaseOrder}/review',
             [PurchaseOrderController::class, 'review']
         );
+
+        Route::post(
+            '/purchase-orders/bulk-approve',
+            [PurchaseOrderController::class, 'bulkApprove']
+        );
+
+        Route::post(
+            '/purchase-orders/bulk-reject',
+            [PurchaseOrderController::class, 'bulkReject']
+        );
     });
 
     Route::middleware(
