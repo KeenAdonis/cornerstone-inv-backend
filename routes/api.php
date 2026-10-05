@@ -299,6 +299,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware(
         'role:admin'
     )->group(function () {
+        Route::get(
+            '/purchase-orders/pending-count',
+            [PurchaseOrderController::class, 'pendingCount']
+        );
+
         Route::patch(
             '/purchase-orders/{purchaseOrder}/review',
             [PurchaseOrderController::class, 'review']

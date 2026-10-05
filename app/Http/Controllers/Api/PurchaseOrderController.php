@@ -215,4 +215,18 @@ class PurchaseOrderController extends Controller
             ],
         ]);
     }
+
+    public function pendingCount(): JsonResponse
+    {
+        $count = PurchaseOrder::query()
+            ->where('status', 'pending')
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'count' => $count,
+            ],
+        ]);
+    }
 }
