@@ -26,6 +26,13 @@ class ReleasePurchaseOrderRequest extends FormRequest
                 'in:in_house,trucking,bus,air_cargo,forwarding',
             ],
 
+            'tracking_number' => [
+                'nullable',
+                'string',
+                'max:255',
+                'required_unless:delivery_type,in_house',
+            ],
+
             'ship_out_date' => [
                 'required',
                 'date_format:Y-m-d',
@@ -44,6 +51,15 @@ class ReleasePurchaseOrderRequest extends FormRequest
 
             'delivery_type.in' =>
                 'Please select a valid delivery type.',
+
+            'tracking_number.required_unless' =>
+                'A tracking number is required for this delivery type.',
+
+            'tracking_number.string' =>
+                'The tracking number must be a valid text value.',
+
+            'tracking_number.max' =>
+                'The tracking number may not exceed 255 characters.',
 
             'ship_out_date.required' =>
                 'The ship out date is required.',

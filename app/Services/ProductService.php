@@ -45,6 +45,7 @@ class ProductService
             subject: $product,
             newValues: $product->only([
                 'name',
+                'product_code',
                 'sku',
                 'category_id',
                 'status',
@@ -65,6 +66,7 @@ class ProductService
     ): Product {
         $oldValues = $product->only([
             'name',
+            'product_code',
             'sku',
             'category_id',
             'status',
@@ -86,6 +88,7 @@ class ProductService
             oldValues: $oldValues,
             newValues: $product->only([
                 'name',
+                'product_code',
                 'sku',
                 'category_id',
                 'status',

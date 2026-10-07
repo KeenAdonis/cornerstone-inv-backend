@@ -29,6 +29,14 @@ class UpdateProductRequest extends FormRequest
                 'exists:categories,id',
             ],
 
+            'product_code' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('products', 'product_code')
+                    ->ignore($product?->id),
+            ],
+
             'name' => [
                 'required',
                 'string',
@@ -39,8 +47,6 @@ class UpdateProductRequest extends FormRequest
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('products', 'sku')
-                    ->ignore($product?->id),
             ],
 
             'unit' => [

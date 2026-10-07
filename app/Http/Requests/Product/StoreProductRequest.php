@@ -26,6 +26,13 @@ class StoreProductRequest extends FormRequest
                 'exists:categories,id',
             ],
 
+            'product_code' => [
+                'nullable',
+                'string',
+                'max:255',
+                'unique:products,product_code',
+            ],
+
             'name' => [
                 'required',
                 'string',
@@ -36,7 +43,6 @@ class StoreProductRequest extends FormRequest
                 'required',
                 'string',
                 'max:255',
-                'unique:products,sku',
             ],
 
             'unit' => [

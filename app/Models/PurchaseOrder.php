@@ -6,6 +6,8 @@ use App\Models\Branch;
 use App\Models\PurchaseOrderItem;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Models\PurchaseOrderDeliveryAttachment;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,6 +29,7 @@ class PurchaseOrder extends Model
         'requested_at',
         'notes',
         'delivery_type',
+        'tracking_number',
         'ship_out_date',
         'date_of_arrival',
         'delivery_photo_path',
@@ -69,6 +72,13 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(
             PurchaseOrderItem::class
+        );
+    }
+
+    public function deliveryAttachments(): HasMany
+    {
+        return $this->hasMany(
+            PurchaseOrderDeliveryAttachment::class
         );
     }
 }

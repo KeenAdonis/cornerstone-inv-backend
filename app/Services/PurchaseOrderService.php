@@ -7,6 +7,7 @@ use App\Models\PurchaseOrder;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Models\PurchaseOrderDeliveryAttachment;
 
 use Illuminate\Database\Eloquent\Collection;
 
@@ -38,6 +39,7 @@ class PurchaseOrderService
                 'creator',
                 'approver',
                 'items.product',
+                'deliveryAttachments',
             ])
             ->latest();
 
@@ -610,8 +612,13 @@ class PurchaseOrderService
         $shipOutDate =
             $data['ship_out_date'];
 
+        $trackingNumber =
+            $deliveryType === 'in_house'
+            ? null
+            : ($data['tracking_number'] ?? null);
+
         return DB::transaction(
-            function () use ($user, $purchaseOrder, $deliveryType, $shipOutDate) {
+            function () use ($user, $purchaseOrder, $deliveryType, $shipOutDate, $trackingNumber) {
                 $purchaseOrder =
                     PurchaseOrder::query()
                         ->with([
@@ -698,6 +705,9 @@ class PurchaseOrderService
                     'delivery_type' =>
                         $deliveryType,
 
+                    'tracking_number' =>
+                        $trackingNumber,
+
                     'ship_out_date' =>
                         $shipOutDate,
                 ]);
@@ -727,6 +737,9 @@ class PurchaseOrderService
                         'delivery_type' =>
                             $deliveryType,
 
+                        'tracking_number' =>
+                            $trackingNumber,
+
                         'ship_out_date' =>
                             $shipOutDate,
                     ],
@@ -743,6 +756,24 @@ class PurchaseOrderService
                 );
             }
         );
+    }
+
+    private function appendDeliveryAttachmentUrls(
+        PurchaseOrder $purchaseOrder
+    ): PurchaseOrder {
+        $purchaseOrder->deliveryAttachments
+            ->each(
+                function (PurchaseOrderDeliveryAttachment $attachment) {
+                    $attachment->setAttribute(
+                        'file_url',
+                        Storage::disk('public')->url(
+                            $attachment->file_path
+                        )
+                    );
+                }
+            );
+
+        return $purchaseOrder;
     }
 
     public function deliver(
@@ -775,22 +806,67 @@ class PurchaseOrderService
             ]);
         }
 
-        /** @var UploadedFile $deliveryPhoto */
-        $deliveryPhoto =
-            $data['delivery_photo'];
+        /*
+        |--------------------------------------------------------------------------
+        | Delivery Proof Attachments
+        |--------------------------------------------------------------------------
+        |
+        | New requests use delivery_photos[].
+        | delivery_photo is kept temporarily for backward compatibility
+        | with the existing single-file implementation.
+        |
+        */
+
+        $deliveryPhotos = [];
+
+        if (
+            isset($data['delivery_photos']) &&
+            is_array($data['delivery_photos'])
+        ) {
+            $deliveryPhotos =
+                $data['delivery_photos'];
+        } elseif (
+            isset($data['delivery_photo']) &&
+            $data['delivery_photo'] instanceof UploadedFile
+        ) {
+            $deliveryPhotos = [
+                $data['delivery_photo'],
+            ];
+        }
+
+        if (
+            count($deliveryPhotos) === 0
+        ) {
+            throw ValidationException::withMessages([
+                'delivery_photos' =>
+                    'At least one delivery proof attachment is required.',
+            ]);
+        }
+
+        $storedDeliveryPaths = [];
+
+        foreach (
+            $deliveryPhotos as $deliveryPhoto
+        ) {
+            /** @var UploadedFile $deliveryPhoto */
+
+            $storedDeliveryPaths[] = [
+                'file' => $deliveryPhoto,
+
+                'path' =>
+                    $deliveryPhoto->store(
+                        'purchase-orders/delivery-photos',
+                        'public'
+                    ),
+            ];
+        }
 
         $dateOfArrival =
             $data['date_of_arrival'] ?? null;
 
-        $deliveryPhotoPath =
-            $deliveryPhoto->store(
-                'purchase-orders/delivery-photos',
-                'public'
-            );
-
         try {
             return DB::transaction(
-                function () use ($user, $purchaseOrder, $deliveryPhotoPath, $dateOfArrival) {
+                function () use ($user, $purchaseOrder, $storedDeliveryPaths, $dateOfArrival) {
                     $purchaseOrder =
                         PurchaseOrder::query()
                             ->with([
@@ -908,16 +984,60 @@ class PurchaseOrderService
                         ]);
                     }
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Update Purchase Order
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $firstDeliveryPhotoPath =
+                        $storedDeliveryPaths[0]['path'];
+
                     $purchaseOrder->update([
                         'status' =>
                             'delivered',
 
+                        /*
+                         * Keep the legacy field populated with
+                         * the first attachment for backward compatibility.
+                         */
                         'delivery_photo_path' =>
-                            $deliveryPhotoPath,
+                            $firstDeliveryPhotoPath,
 
                         'date_of_arrival' =>
                             $dateOfArrival,
                     ]);
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Save Delivery Proof Attachments
+                    |--------------------------------------------------------------------------
+                    */
+
+                    foreach (
+                        $storedDeliveryPaths as $storedDelivery
+                    ) {
+                        /** @var UploadedFile $deliveryPhoto */
+                        $deliveryPhoto =
+                            $storedDelivery['file'];
+
+                        PurchaseOrderDeliveryAttachment::create([
+                            'purchase_order_id' =>
+                                $purchaseOrder->id,
+
+                            'file_name' =>
+                                $deliveryPhoto->getClientOriginalName(),
+
+                            'file_path' =>
+                                $storedDelivery['path'],
+
+                            'mime_type' =>
+                                $deliveryPhoto->getClientMimeType(),
+
+                            'file_size' =>
+                                $deliveryPhoto->getSize(),
+                        ]);
+                    }
 
                     $purchaseOrder->load([
                         'branch',
@@ -950,20 +1070,46 @@ class PurchaseOrderService
                         ],
                     );
 
-                    return $this->appendDeliveryPhotoUrl(
+                    $purchaseOrder =
                         $purchaseOrder->fresh([
                             'branch',
                             'warehouse',
                             'creator',
                             'approver',
                             'items.product',
-                        ])
+                            'deliveryAttachments',
+                        ]);
+
+                    $this->appendDeliveryPhotoUrl(
+                        $purchaseOrder
                     );
+
+                    $this->appendDeliveryAttachmentUrls(
+                        $purchaseOrder
+                    );
+
+                    return $purchaseOrder;
                 }
             );
         } catch (\Throwable $exception) {
-            Storage::disk('public')
-                ->delete($deliveryPhotoPath);
+            /*
+            |--------------------------------------------------------------------------
+            | Cleanup Uploaded Files
+            |--------------------------------------------------------------------------
+            |
+            | If the database transaction fails, remove all files
+            | that were already stored.
+            |
+            */
+
+            foreach (
+                $storedDeliveryPaths as $storedDelivery
+            ) {
+                Storage::disk('public')
+                    ->delete(
+                        $storedDelivery['path']
+                    );
+            }
 
             throw $exception;
         }
@@ -1225,6 +1371,10 @@ class PurchaseOrderService
         return $purchaseOrders->each(
             function (PurchaseOrder $purchaseOrder) {
                 $this->appendDeliveryPhotoUrl(
+                    $purchaseOrder
+                );
+
+                $this->appendDeliveryAttachmentUrls(
                     $purchaseOrder
                 );
             }
