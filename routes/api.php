@@ -318,6 +318,11 @@ Route::middleware('auth:sanctum')->group(function () {
             '/purchase-orders/bulk-reject',
             [PurchaseOrderController::class, 'bulkReject']
         );
+
+        Route::delete(
+            '/purchase-orders/{purchaseOrder}',
+            [PurchaseOrderController::class, 'destroy']
+        );
     });
 
     Route::middleware(

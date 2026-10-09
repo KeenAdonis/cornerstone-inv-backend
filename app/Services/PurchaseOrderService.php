@@ -230,6 +230,7 @@ class PurchaseOrderService
         );
     }
 
+
     public function review(
         User $user,
         PurchaseOrder $purchaseOrder,
@@ -242,108 +243,86 @@ class PurchaseOrderService
             ]);
         }
 
-        if ($purchaseOrder->status !== 'pending') {
-            throw ValidationException::withMessages([
-                'status' =>
-                    'Only pending purchase orders can be reviewed.',
-            ]);
-        }
-
-        return DB::transaction(
-            function () use ($user, $purchaseOrder, $data) {
-                if (
-                    $data['action'] ===
-                    'approve'
-                ) {
-                    $purchaseOrder->update([
-                        'status' =>
-                            'approved',
-
-                        'approved_by' =>
-                            $user->id,
-
-                        'approved_at' =>
-                            now(),
-
-                        'rejection_reason' =>
-                            null,
-                    ]);
-                }
-
-                if (
-                    $data['action'] ===
-                    'reject'
-                ) {
-                    $purchaseOrder->update([
-                        'status' =>
-                            'rejected',
-
-                        'approved_by' =>
-                            null,
-
-                        'approved_at' =>
-                            null,
-
-                        'rejection_reason' =>
-                            $data['rejection_reason'] ??
-                            null,
-                    ]);
-                }
-
-                $purchaseOrder->load([
+        return DB::transaction(function () use ($user, $purchaseOrder, $data) {
+            $purchaseOrder = PurchaseOrder::query()
+                ->with([
                     'branch',
                     'warehouse',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($purchaseOrder->id);
+
+            if ($purchaseOrder->status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'status' =>
+                        'Only pending purchase orders can be reviewed.',
                 ]);
-
-                $newStatus =
-                    $data['action'] ===
-                    'approve'
-                    ? 'approved'
-                    : 'rejected';
-
-                $this->activityLogService->log(
-                    user: $user,
-                    action:
-                    $data['action'] ===
-                    'approve'
-                    ? 'approved'
-                    : 'rejected',
-                    module: 'purchase_order',
-                    description:
-                    $data['action'] ===
-                    'approve'
-                    ? 'Approved purchase order ' .
-                    $purchaseOrder->reference_number . '.'
-                    : 'Rejected purchase order ' .
-                    $purchaseOrder->reference_number . '.',
-                    branch:
-                    $purchaseOrder->branch,
-                    warehouse:
-                    $purchaseOrder->warehouse,
-                    subject:
-                    $purchaseOrder,
-                    oldValues: [
-                        'status' =>
-                            'pending',
-                    ],
-                    newValues: [
-                        'status' =>
-                            $newStatus,
-                    ],
-                );
-
-                return $this->appendDeliveryPhotoUrl(
-                    $purchaseOrder->fresh([
-                        'branch',
-                        'warehouse',
-                        'creator',
-                        'approver',
-                        'items.product',
-                    ])
-                );
             }
-        );
+
+            if ($data['action'] === 'approve') {
+                $purchaseOrder->update([
+                    'status' => 'approved',
+                    'approved_by' => $user->id,
+                    'approved_at' => now(),
+                    'rejection_reason' => null,
+                ]);
+            } elseif ($data['action'] === 'reject') {
+                $purchaseOrder->update([
+                    'status' => 'rejected',
+                    'approved_by' => null,
+                    'approved_at' => null,
+                    'rejection_reason' =>
+                        $data['rejection_reason'] ?? null,
+                ]);
+            } else {
+                throw ValidationException::withMessages([
+                    'action' => 'Invalid review action.',
+                ]);
+            }
+
+            $purchaseOrder->load([
+                'branch',
+                'warehouse',
+            ]);
+
+            $newStatus = $data['action'] === 'approve'
+                ? 'approved'
+                : 'rejected';
+
+            $this->activityLogService->log(
+                user: $user,
+                action: $data['action'] === 'approve'
+                ? 'approved'
+                : 'rejected',
+                module: 'purchase_order',
+                description: $data['action'] === 'approve'
+                ? 'Approved purchase order ' .
+                $purchaseOrder->reference_number . '.'
+                : 'Rejected purchase order ' .
+                $purchaseOrder->reference_number . '.',
+                branch: $purchaseOrder->branch,
+                warehouse: $purchaseOrder->warehouse,
+                subject: $purchaseOrder,
+                oldValues: [
+                    'status' => 'pending',
+                ],
+                newValues: [
+                    'status' => $newStatus,
+                ],
+            );
+
+            return $this->appendDeliveryPhotoUrl(
+                $purchaseOrder->fresh([
+                    'branch',
+                    'warehouse',
+                    'creator',
+                    'approver',
+                    'items.product',
+                ])
+            );
+        });
     }
+
 
     public function bulkApprove(
         User $user,
@@ -499,82 +478,73 @@ class PurchaseOrderService
         });
     }
 
+
     public function process(
         User $user,
         PurchaseOrder $purchaseOrder
     ): PurchaseOrder {
-        if (
-            $user->role !==
-            'warehouse_coordinator'
-        ) {
+        if ($user->role !== 'warehouse_coordinator') {
             throw ValidationException::withMessages([
                 'user' =>
                     'Only warehouse coordinators can prepare purchase orders.',
             ]);
         }
 
-        $this->authorizeWarehouseAssignment(
-            $user,
-            $purchaseOrder->warehouse_id
-        );
-
-        if (
-            $purchaseOrder->status !==
-            'approved'
-        ) {
-            throw ValidationException::withMessages([
-                'status' =>
-                    'Only approved purchase orders can be prepared.',
-            ]);
-        }
-
-        return DB::transaction(
-            function () use ($user, $purchaseOrder) {
-                $purchaseOrder->update([
-                    'status' =>
-                        'preparing',
-                ]);
-
-                $purchaseOrder->load([
+        return DB::transaction(function () use ($user, $purchaseOrder) {
+            $purchaseOrder = PurchaseOrder::query()
+                ->with([
                     'branch',
                     'warehouse',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($purchaseOrder->id);
+
+            $this->authorizeWarehouseAssignment(
+                $user,
+                $purchaseOrder->warehouse_id
+            );
+
+            if ($purchaseOrder->status !== 'approved') {
+                throw ValidationException::withMessages([
+                    'status' =>
+                        'Only approved purchase orders can be prepared.',
                 ]);
-
-                $this->activityLogService->log(
-                    user: $user,
-                    action: 'prepared',
-                    module: 'purchase_order',
-                    description:
-                    'Started preparing purchase order ' .
-                    $purchaseOrder->reference_number . '.',
-                    branch:
-                    $purchaseOrder->branch,
-                    warehouse:
-                    $purchaseOrder->warehouse,
-                    subject:
-                    $purchaseOrder,
-                    oldValues: [
-                        'status' =>
-                            'approved',
-                    ],
-                    newValues: [
-                        'status' =>
-                            'preparing',
-                    ],
-                );
-
-                return $this->appendDeliveryPhotoUrl(
-                    $purchaseOrder->fresh([
-                        'branch',
-                        'warehouse',
-                        'creator',
-                        'approver',
-                        'items.product',
-                    ])
-                );
             }
-        );
+
+            $purchaseOrder->update([
+                'status' => 'preparing',
+            ]);
+
+            $this->activityLogService->log(
+                user: $user,
+                action: 'prepared',
+                module: 'purchase_order',
+                description:
+                'Started preparing purchase order ' .
+                $purchaseOrder->reference_number . '.',
+                branch: $purchaseOrder->branch,
+                warehouse: $purchaseOrder->warehouse,
+                subject: $purchaseOrder,
+                oldValues: [
+                    'status' => 'approved',
+                ],
+                newValues: [
+                    'status' => 'preparing',
+                ],
+            );
+
+            return $this->appendDeliveryPhotoUrl(
+                $purchaseOrder->fresh([
+                    'branch',
+                    'warehouse',
+                    'creator',
+                    'approver',
+                    'items.product',
+                ])
+            );
+        });
     }
+
 
     public function release(
         User $user,
@@ -1404,4 +1374,67 @@ class PurchaseOrderService
 
         return $referenceNumber;
     }
+
+    public function delete(
+        User $user,
+        PurchaseOrder $purchaseOrder
+    ): void {
+        if ($user->role !== 'admin') {
+            throw ValidationException::withMessages([
+                'user' =>
+                    'Only administrators can delete purchase orders.',
+            ]);
+        }
+
+        DB::transaction(function () use ($user, $purchaseOrder) {
+            $purchaseOrder = PurchaseOrder::query()
+                ->with([
+                    'branch',
+                    'warehouse',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($purchaseOrder->id);
+
+            $allowedStatuses = [
+                'approved',
+                'preparing',
+                'rejected',
+                'cancelled',
+            ];
+
+            if (
+                !in_array(
+                    $purchaseOrder->status,
+                    $allowedStatuses,
+                    true
+                )
+            ) {
+                throw ValidationException::withMessages([
+                    'status' =>
+                        'This purchase order cannot be deleted because it has entered delivery or has already affected inventory.',
+                ]);
+            }
+
+            $this->activityLogService->log(
+                user: $user,
+                action: 'deleted',
+                module: 'purchase_order',
+                description:
+                'Deleted purchase order ' .
+                $purchaseOrder->reference_number . '.',
+                branch: $purchaseOrder->branch,
+                warehouse: $purchaseOrder->warehouse,
+                subject: $purchaseOrder,
+                oldValues: [
+                    'reference_number' =>
+                        $purchaseOrder->reference_number,
+                    'status' =>
+                        $purchaseOrder->status,
+                ],
+            );
+
+            $purchaseOrder->delete();
+        });
+    }
 }
+

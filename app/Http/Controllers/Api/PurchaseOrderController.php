@@ -216,6 +216,23 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
+    public function destroy(
+        Request $request,
+        PurchaseOrder $purchaseOrder
+    ): JsonResponse {
+        $this->purchaseOrderService->delete(
+            $request->user(),
+            $purchaseOrder
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' =>
+                'Purchase order deleted successfully.',
+        ]);
+    }
+
+
     public function pendingCount(): JsonResponse
     {
         $count = PurchaseOrder::query()
