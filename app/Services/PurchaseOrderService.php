@@ -663,8 +663,23 @@ class PurchaseOrderService
 
                     $warehouseInventory->update([
                         'quantity' =>
-                            $availableQuantity -
-                            $quantity,
+                            $availableQuantity - $quantity,
+                    ]);
+
+                    StockMovement::create([
+                        'product_id' => $item->product_id,
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'movement_type' => 'transfer',
+                        'quantity' => $quantity,
+                        'from_warehouse_id' => $purchaseOrder->warehouse_id,
+                        'from_branch_id' => null,
+                        'to_warehouse_id' => null,
+                        'to_branch_id' => null,
+                        'moved_at' => now(),
+                        'created_by' => $user->id,
+                        'notes' =>
+                            'Released for delivery through purchase order ' .
+                            $purchaseOrder->reference_number,
                     ]);
                 }
 
