@@ -10,6 +10,7 @@ use App\Http\Requests\PurchaseOrder\ReviewPurchaseOrderRequest;
 use App\Http\Requests\PurchaseOrder\StorePurchaseOrderRequest;
 use App\Http\Requests\PurchaseOrder\BulkApprovePurchaseOrdersRequest;
 use App\Http\Requests\PurchaseOrder\BulkRejectPurchaseOrdersRequest;
+use App\Http\Requests\PurchaseOrder\UpdateTrackingNumberRequest;
 
 use App\Models\PurchaseOrder;
 
@@ -172,6 +173,28 @@ class PurchaseOrderController extends Controller
             ],
         ]);
     }
+    
+    public function updateTrackingNumber(
+        UpdateTrackingNumberRequest $request,
+        PurchaseOrder $purchaseOrder
+    ): JsonResponse {
+        $updatedPurchaseOrder =
+            $this->purchaseOrderService->updateTrackingNumber(
+                $request->user(),
+                $purchaseOrder,
+                $request->validated('tracking_number')
+            );
+
+        return response()->json([
+            'success' => true,
+            'message' =>
+                'Purchase order tracking number updated successfully.',
+            'data' => [
+                'purchase_order' =>
+                    $updatedPurchaseOrder,
+            ],
+        ]);
+    }
 
     public function deliver(
         DeliverPurchaseOrderRequest $request,
@@ -195,6 +218,7 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
+    
     public function complete(
         Request $request,
         PurchaseOrder $purchaseOrder

@@ -4,8 +4,14 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\User;
+
 use App\Services\ActivityLogService;
+
 use Illuminate\Database\Eloquent\Collection;
+
+use Illuminate\Support\Facades\Storage;
+
+use Illuminate\Http\UploadedFile;
 
 class ProductService
 {
@@ -13,6 +19,7 @@ class ProductService
         private ActivityLogService $activityLogService
     ) {
     }
+
     /**
      * Get all products with their categories.
      */
@@ -20,7 +27,23 @@ class ProductService
     {
         return Product::with('category')
             ->latest()
-            ->get();
+            ->get()
+            ->each(fn(Product $product) => $this->addImageUrl($product));
+    }
+
+    /**
+     * Add the public image URL to a product.
+     */
+    private function addImageUrl(Product $product): Product
+    {
+        $product->setAttribute(
+            'image_url',
+            $product->image_path
+            ? Storage::disk('public')->url($product->image_path)
+            : null
+        );
+
+        return $product;
     }
 
     /**
@@ -30,31 +53,54 @@ class ProductService
         User $user,
         array $data
     ): Product {
-        $product = Product::create($data);
+        $image = $data['image'] ?? null;
 
-        $product->load('category');
+        unset($data['image']);
 
-        $this->activityLogService->log(
-            user: $user,
-            action: 'created',
-            module: 'product',
-            description:
-            'Created product ' .
-            $product->name .
-            '.',
-            subject: $product,
-            newValues: $product->only([
-                'name',
-                'product_code',
-                'sku',
-                'category_id',
-                'status',
-            ]),
-        );
+        if ($image instanceof UploadedFile) {
+            $data['image_path'] = $image->store(
+                'products',
+                'public'
+            );
+        }
 
-        return $product;
+        try {
+            $product = Product::create($data);
 
+            $product->load('category');
+
+            $this->activityLogService->log(
+                user: $user,
+                action: 'created',
+                module: 'product',
+                description:
+                'Created product ' .
+                $product->name .
+                '.',
+                subject: $product,
+                newValues: $product->only([
+                    'name',
+                    'product_code',
+                    'sku',
+                    'category_id',
+                    'status',
+                    'image_path',
+                ]),
+            );
+
+            return $this->addImageUrl($product);
+        } catch (\Throwable $exception) {
+            if (isset($data['image_path'])) {
+                Storage::disk('public')->delete(
+                    $data['image_path']
+                );
+            }
+
+            throw $exception;
+        }
     }
+
+
 
     /**
      * Update an existing product.
@@ -64,39 +110,78 @@ class ProductService
         Product $product,
         array $data
     ): Product {
+        $image = $data['image'] ?? null;
+
+        unset($data['image']);
+
         $oldValues = $product->only([
             'name',
             'product_code',
             'sku',
             'category_id',
             'status',
+            'image_path',
         ]);
 
-        $product->update($data);
+        $oldImagePath = $product->image_path;
+        $newImagePath = null;
 
-        $product->load('category');
+        if ($image instanceof UploadedFile) {
+            $newImagePath = $image->store(
+                'products',
+                'public'
+            );
 
-        $this->activityLogService->log(
-            user: $user,
-            action: 'updated',
-            module: 'product',
-            description:
-            'Updated product ' .
-            $product->name .
-            '.',
-            subject: $product,
-            oldValues: $oldValues,
-            newValues: $product->only([
-                'name',
-                'product_code',
-                'sku',
-                'category_id',
-                'status',
-            ]),
-        );
+            $data['image_path'] = $newImagePath;
+        }
 
-        return $product;
+        try {
+            $product->update($data);
+
+            $product->load('category');
+
+            $this->activityLogService->log(
+                user: $user,
+                action: 'updated',
+                module: 'product',
+                description:
+                'Updated product ' .
+                $product->name .
+                '.',
+                subject: $product,
+                oldValues: $oldValues,
+                newValues: $product->only([
+                    'name',
+                    'product_code',
+                    'sku',
+                    'category_id',
+                    'status',
+                    'image_path',
+                ]),
+            );
+
+            if (
+                $newImagePath !== null &&
+                $oldImagePath !== null &&
+                $oldImagePath !== $newImagePath
+            ) {
+                Storage::disk('public')->delete(
+                    $oldImagePath
+                );
+            }
+
+            return $this->addImageUrl($product);
+        } catch (\Throwable $exception) {
+            if ($newImagePath !== null) {
+                Storage::disk('public')->delete(
+                    $newImagePath
+                );
+            }
+
+            throw $exception;
+        }
     }
+
 
     /**
      * Delete a product.

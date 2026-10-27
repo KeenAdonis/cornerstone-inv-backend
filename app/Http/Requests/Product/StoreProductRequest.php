@@ -62,6 +62,13 @@ class StoreProductRequest extends FormRequest
                 'string',
             ],
 
+            'image' => [
+                'nullable',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:2048',
+            ],
+
             'status' => [
                 'nullable',
                 'in:active,inactive',

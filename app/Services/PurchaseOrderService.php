@@ -743,6 +743,53 @@ class PurchaseOrderService
         );
     }
 
+    public function updateTrackingNumber(
+        User $user,
+        PurchaseOrder $purchaseOrder,
+        ?string $trackingNumber
+    ): PurchaseOrder {
+        if ($user->role !== 'warehouse_coordinator') {
+            throw new \Illuminate\Auth\Access\AuthorizationException(
+                'Only warehouse coordinators can update tracking numbers.'
+            );
+        }
+
+        $this->authorizeWarehouseAssignment(
+            $user,
+            (int) $purchaseOrder->warehouse_id
+        );
+
+        return DB::transaction(function () use ($purchaseOrder, $trackingNumber) {
+            $lockedPurchaseOrder = PurchaseOrder::query()
+                ->whereKey($purchaseOrder->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedPurchaseOrder->status !== 'out_for_delivery') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'tracking_number' =>
+                        'Tracking numbers can only be updated while the purchase order is out for delivery.',
+                ]);
+            }
+
+            $lockedPurchaseOrder->tracking_number =
+                $trackingNumber !== null
+                ? trim($trackingNumber) ?: null
+                : null;
+
+            $lockedPurchaseOrder->save();
+
+            return $lockedPurchaseOrder->fresh([
+                'branch',
+                'warehouse',
+                'creator',
+                'approver',
+                'items.product',
+                'deliveryAttachments',
+            ]);
+        });
+    }
+
     private function appendDeliveryAttachmentUrls(
         PurchaseOrder $purchaseOrder
     ): PurchaseOrder {

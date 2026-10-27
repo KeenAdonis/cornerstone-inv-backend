@@ -339,6 +339,11 @@ Route::middleware('auth:sanctum')->group(function () {
         );
 
         Route::patch(
+            '/purchase-orders/{purchaseOrder}/tracking-number',
+            [PurchaseOrderController::class, 'updateTrackingNumber']
+        );
+
+        Route::patch(
             '/purchase-orders/{purchaseOrder}/complete',
             [PurchaseOrderController::class, 'complete']
         );

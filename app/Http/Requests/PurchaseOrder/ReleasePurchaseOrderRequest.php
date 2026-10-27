@@ -30,7 +30,6 @@ class ReleasePurchaseOrderRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
-                'required_unless:delivery_type,in_house',
             ],
 
             'ship_out_date' => [
@@ -51,9 +50,6 @@ class ReleasePurchaseOrderRequest extends FormRequest
 
             'delivery_type.in' =>
                 'Please select a valid delivery type.',
-
-            'tracking_number.required_unless' =>
-                'A tracking number is required for this delivery type.',
 
             'tracking_number.string' =>
                 'The tracking number must be a valid text value.',
