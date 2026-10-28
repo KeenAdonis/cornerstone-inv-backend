@@ -108,6 +108,7 @@ class PurchaseOrderService
                         'out_for_delivery',
                         'delivered',
                         'completed',
+                        'rejected',
                     ])
                     ->get()
             );
@@ -787,6 +788,91 @@ class PurchaseOrderService
                 'items.product',
                 'deliveryAttachments',
             ]);
+        });
+    }
+
+    public function rejectDuringDelivery(
+        User $user,
+        PurchaseOrder $purchaseOrder,
+        array $data
+    ): PurchaseOrder {
+        if ($user->role !== 'warehouse_coordinator') {
+            throw ValidationException::withMessages([
+                'user' =>
+                    'Only warehouse coordinators can reject purchase orders during delivery.',
+            ]);
+        }
+
+        $this->authorizeWarehouseAssignment(
+            $user,
+            $purchaseOrder->warehouse_id
+        );
+
+        return DB::transaction(function () use ($user, $purchaseOrder, $data) {
+            $purchaseOrder = PurchaseOrder::query()
+                ->with([
+                    'branch',
+                    'warehouse',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($purchaseOrder->id);
+
+            $this->authorizeWarehouseAssignment(
+                $user,
+                $purchaseOrder->warehouse_id
+            );
+
+            if ($purchaseOrder->status !== 'out_for_delivery') {
+                throw ValidationException::withMessages([
+                    'status' =>
+                        'Only purchase orders that are out for delivery can be rejected.',
+                ]);
+            }
+
+            $purchaseOrder->update([
+                'status' => 'rejected',
+                'approved_by' => null,
+                'approved_at' => null,
+                'rejection_reason' => trim(
+                    $data['rejection_reason']
+                ),
+            ]);
+
+            $purchaseOrder->load([
+                'branch',
+                'warehouse',
+            ]);
+
+            $this->activityLogService->log(
+                user: $user,
+                action: 'rejected',
+                module: 'purchase_order',
+                description:
+                'Rejected purchase order ' .
+                $purchaseOrder->reference_number .
+                ' during delivery.',
+                branch: $purchaseOrder->branch,
+                warehouse: $purchaseOrder->warehouse,
+                subject: $purchaseOrder,
+                oldValues: [
+                    'status' => 'out_for_delivery',
+                ],
+                newValues: [
+                    'status' => 'rejected',
+                    'rejection_reason' =>
+                        trim($data['rejection_reason']),
+                ],
+            );
+
+            return $this->appendDeliveryPhotoUrl(
+                $purchaseOrder->fresh([
+                    'branch',
+                    'warehouse',
+                    'creator',
+                    'approver',
+                    'items.product',
+                ])
+            );
         });
     }
 

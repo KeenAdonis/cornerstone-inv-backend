@@ -344,6 +344,11 @@ Route::middleware('auth:sanctum')->group(function () {
         );
 
         Route::patch(
+            '/purchase-orders/{purchaseOrder}/reject',
+            [PurchaseOrderController::class, 'rejectDuringDelivery']
+        );
+
+        Route::patch(
             '/purchase-orders/{purchaseOrder}/complete',
             [PurchaseOrderController::class, 'complete']
         );
