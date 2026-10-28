@@ -822,12 +822,19 @@ class PurchaseOrderService
                 $purchaseOrder->warehouse_id
             );
 
-            if ($purchaseOrder->status !== 'out_for_delivery') {
+            if (
+                !in_array($purchaseOrder->status, [
+                    'out_for_delivery',
+                    'delivered',
+                ], true)
+            ) {
                 throw ValidationException::withMessages([
                     'status' =>
-                        'Only purchase orders that are out for delivery can be rejected.',
+                        'Only purchase orders that are out for delivery or delivered can be rejected.',
                 ]);
             }
+
+            $previousStatus = $purchaseOrder->status;
 
             $purchaseOrder->update([
                 'status' => 'rejected',
@@ -855,7 +862,7 @@ class PurchaseOrderService
                 warehouse: $purchaseOrder->warehouse,
                 subject: $purchaseOrder,
                 oldValues: [
-                    'status' => 'out_for_delivery',
+                    'status' => $previousStatus,
                 ],
                 newValues: [
                     'status' => 'rejected',
