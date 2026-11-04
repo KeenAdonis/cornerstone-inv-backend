@@ -15,11 +15,20 @@ use App\Http\Controllers\Api\InventoryCountController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\DashboardAnalyticsController;
 use App\Http\Controllers\Api\ProductRankingController;
+use App\Services\SystemAvailabilityService;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
+
+Route::get('/system-availability', function (
+    SystemAvailabilityService $availability
+) {
+    return response()->json([
+        'available' => $availability->isAvailable(),
+    ], $availability->isAvailable() ? 200 : 503);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     /*
